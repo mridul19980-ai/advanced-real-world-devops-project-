@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y ca-certificates curl git
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+systemctl enable docker
+systemctl start docker
+
+mkdir -p /opt
+
+if [ ! -d /opt/college-project/.git ]; then
+  git clone --branch "${repository_branch}" "${repository_url}" /opt/college-project
+fi
+
+cd /opt/college-project
+git fetch origin "${repository_branch}"
+git checkout "${repository_branch}"
+git pull origin "${repository_branch}"
+
+cat > .env <<ENV_FILE
+MYSQL_DATABASE=${mysql_database}
+MYSQL_USER=${mysql_user}
+MYSQL_PASSWORD=${mysql_password}
+MYSQL_ROOT_PASSWORD=${mysql_root_password}
+ENV_FILE
+
+docker compose up -d --build
+
