@@ -1,34 +1,62 @@
-terraform {
-  required_version = ">= 1.6.0"
+resource "aws_vpc" "college_vpc" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
+  tags = {
+    Name = "college-project-vpc"
   }
 }
 
-provider "aws" {
-  region = var.aws_region
-}
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = aws_vpc.college_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
 
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  tags = {
+    Name = "college-public-subnet"
   }
 }
 
-resource "aws_security_group" "app" {
-  name        = "${var.project_name}-sg"
-  description = "Allow HTTP and SSH access"
+resource "aws_internet_gateway" "college_igw" {
+  vpc_id = aws_vpc.college_vpc.id
+
+  tags = {
+    Name = "college-project-igw"
+  }
+}
+
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.college_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.college_igw.id
+  }
+
+  tags = {
+    Name = "college-public-route-table"
+  }
+}
+
+resource "aws_route_table_association" "public_assoc" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_security_group" "college_project_sg" {
+  name   = "docker-app-sg"
+  vpc_id = aws_vpc.college_vpc.id
 
   ingress {
-    description = "HTTP"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -36,11 +64,10 @@ resource "aws_security_group" "app" {
   }
 
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
+    from_port   = 3000
+    to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -51,32 +78,25 @@ resource "aws_security_group" "app" {
   }
 
   tags = {
-    Name = "${var.project_name}-sg"
+    Name = "college-project-sg"
   }
 }
 
-resource "aws_instance" "app" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  key_name               = var.key_name
-  vpc_security_group_ids = [aws_security_group.app.id]
+resource "aws_instance" "app_server" {
+  ami                         = var.ami_id
+  instance_type               = "m7i-flex.large"
+  key_name                    = var.key_name
+  subnet_id                   = aws_subnet.public_subnet.id
+  vpc_security_group_ids      = [aws_security_group.college_project_sg.id]
+  associate_public_ip_address = true
 
-  root_block_device {
-    volume_size = 20
-    volume_type = "gp3"
-  }
-
-  user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    repository_url      = var.repository_url
-    repository_branch   = var.repository_branch
-    mysql_database      = var.mysql_database
-    mysql_user          = var.mysql_user
-    mysql_password      = var.mysql_password
-    mysql_root_password = var.mysql_root_password
-  })
-
+  user_data = <<-EOF
+              #!/bin/bash
+              apt-get update -y
+              sudo apt install -y fontconfig openjdk-21-jre
+              java -version
+              EOF
   tags = {
-    Name = var.project_name
+    Name = "Docker-App-Server"
   }
 }
-
