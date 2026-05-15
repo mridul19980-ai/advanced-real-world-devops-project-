@@ -32,7 +32,26 @@ pipeline {
                 '''
             }
         }
+        stage('Create Env File') {
+            steps {
+              withCredentials([
+              string(credentialsId: 'mysql-database', variable: 'MYSQL_DATABASE'),
+              string(credentialsId: 'mysql-user', variable: 'MYSQL_USER'),
+              string(credentialsId: 'mysql-password', variable: 'MYSQL_PASSWORD'),
+              string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD')
+        ]) {
+            sh '''
+            cat > .env <<EOF
+       MYSQL_DATABASE=${MYSQL_DATABASE}
+       MYSQL_USER=${MYSQL_USER}
+       MYSQL_PASSWORD=${MYSQL_PASSWORD}
+       MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+       EOF
 
+            chmod 600 .env
+            '''
+        }
+    }
         stage('Stop Old Containers') {
             steps {
                 sh '''
